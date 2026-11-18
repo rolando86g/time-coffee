@@ -37,8 +37,131 @@ const nombreEstado: Record<EstadoTurno, string> = {
   entregado: 'Entregado',
 };
 
+function detalleDelError(error: unknown): { code: string; message: string } | null {
+  if (error instanceof Error) {
+    return {
+      code: 'code' in error && typeof error.code === 'string' ? error.code : '',
+      message: error.message,
+    };
+  }
+
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    const message = error.message;
+    const code = 'code' in error ? error.code : '';
+    if (typeof message === 'string') {
+      return { code: typeof code === 'string' ? code : '', message };
+    }
+  }
+
+  return null;
+}
+
 function mensajeDeError(error: unknown) {
-  return error instanceof Error ? error.message : 'Ocurrió un error inesperado.';
+  const detalle = detalleDelError(error);
+  if (!detalle) return 'Ocurrió un error inesperado. Inténtalo nuevamente.';
+
+  const codigo = detalle.code.toLowerCase();
+  const mensaje = detalle.message.toLowerCase();
+
+  if (
+    codigo === 'user_already_exists' ||
+    codigo === 'email_exists' ||
+    mensaje.includes('user already registered') ||
+    mensaje.includes('user already exists')
+  ) {
+    return 'Ya existe una cuenta registrada con ese correo. Inicia sesión o usa otro correo.';
+  }
+
+  if (
+    codigo === 'invalid_credentials' ||
+    codigo === 'invalid_login_credentials' ||
+    mensaje.includes('invalid login credentials') ||
+    mensaje.includes('invalid credentials')
+  ) {
+    return 'El correo o la contraseña son incorrectos.';
+  }
+
+  if (codigo === 'email_not_confirmed' || mensaje.includes('email not confirmed')) {
+    return 'Debes confirmar tu correo antes de iniciar sesión.';
+  }
+
+  if (
+    codigo === 'weak_password' ||
+    mensaje.includes('password should be at least') ||
+    mensaje.includes('password is too short')
+  ) {
+    return 'La contraseña es demasiado corta. Usa una contraseña más larga.';
+  }
+
+  if (
+    codigo === 'email_address_invalid' ||
+    mensaje.includes('invalid email') ||
+    mensaje.includes('email address is invalid')
+  ) {
+    return 'El formato del correo electrónico no es válido.';
+  }
+
+  if (
+    codigo.includes('rate_limit') ||
+    mensaje.includes('rate limit') ||
+    mensaje.includes('too many requests')
+  ) {
+    return 'Se realizaron demasiados intentos. Espera un momento y vuelve a probar.';
+  }
+
+  if (
+    codigo === 'signup_disabled' ||
+    mensaje.includes('signups not allowed') ||
+    mensaje.includes('signup is disabled')
+  ) {
+    return 'El registro de cuentas está deshabilitado en Supabase.';
+  }
+
+  if (
+    codigo === '42501' ||
+    mensaje.includes('row-level security') ||
+    mensaje.includes('permission denied')
+  ) {
+    return 'No tienes permiso para realizar esta acción. Verifica tu rol y las políticas de acceso.';
+  }
+
+  if (codigo === 'pgrst116' || mensaje.includes('no rows')) {
+    return 'No se encontró el perfil de esta cuenta. Verifica que las migraciones estén aplicadas.';
+  }
+
+  if (
+    codigo === '42p01' ||
+    mensaje.includes('relation') && mensaje.includes('does not exist') ||
+    mensaje.includes('could not find the table') ||
+    mensaje.includes('schema cache')
+  ) {
+    return 'No se encontró una tabla necesaria. Verifica que hayas aplicado las migraciones de Supabase.';
+  }
+
+  if (
+    codigo === '42703' ||
+    mensaje.includes('column') && mensaje.includes('does not exist')
+  ) {
+    return 'La estructura de la base de datos está desactualizada. Aplica las migraciones pendientes.';
+  }
+
+  if (codigo === '23505' || mensaje.includes('duplicate key')) {
+    return 'Este registro ya existe. Actualiza la lista e inténtalo nuevamente.';
+  }
+
+  if (mensaje.includes('failed to fetch') || mensaje.includes('network request failed')) {
+    return 'No se pudo conectar con Supabase. Revisa tu conexión a internet e inténtalo nuevamente.';
+  }
+
+  if (mensaje.includes('jwt expired') || mensaje.includes('token has expired')) {
+    return 'Tu sesión expiró. Cierra sesión e inicia nuevamente.';
+  }
+
+  if (mensaje.includes('null value in column')) {
+    return 'Faltan datos obligatorios para completar la operación.';
+  }
+
+  return 'Ocurrió un error inesperado. Inténtalo nuevamente.';
 }
 
 function fechaLegible(fecha: string) {
@@ -62,21 +185,51 @@ export default function Home() {
   const [authCargando, setAuthCargando] = useState(false);
   const [turnos, setTurnos] = useState<Turno[]>([]);
   const [turnosCargando, setTurnosCargando] = useState(false);
+  const [mostrarHistorialEntregados, setMostrarHistorialEntregados] = useState(false);
+  const [mostrarHistorialCliente, setMostrarHistorialCliente] = useState(false);
+  const [limpiandoHistorial, setLimpiandoHistorial] = useState(false);
+  const [limpiandoHistorialAdmin, setLimpiandoHistorialAdmin] = useState(false);
   const [pidiendoTurno, setPidiendoTurno] = useState(false);
   const [turnoEnProceso, setTurnoEnProceso] = useState<number | null>(null);
   const [realtimeConectado, setRealtimeConectado] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(
+  const [errorMsg, setErrorState] = useState<string | null>(
     supabase
       ? null
       : 'Configura NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY.',
   );
-  const [infoMsg, setInfoMsg] = useState<string | null>(null);
+  const [infoMsg, setInfoState] = useState<string | null>(null);
+  const [avisoVersion, setAvisoVersion] = useState(0);
+  const setErrorMsg = useCallback((mensaje: string | null) => {
+    setErrorState(mensaje);
+    if (mensaje !== null) {
+      setInfoState(null);
+      setAvisoVersion((version) => version + 1);
+    }
+  }, []);
+  const setInfoMsg = useCallback((mensaje: string | null) => {
+    setInfoState(mensaje);
+    if (mensaje !== null) {
+      setErrorState(null);
+      setAvisoVersion((version) => version + 1);
+    }
+  }, []);
 
   const usuarioId = usuario?.id;
   const perfilActual = usuarioId && perfil?.userId === usuarioId ? perfil : null;
   const rol = perfilActual?.role ?? null;
   const perfilCargando = Boolean(usuario && !perfilActual);
   const esAdmin = rol === 'admin';
+
+  useEffect(() => {
+    if (errorMsg === null && infoMsg === null) return;
+
+    const timer = window.setTimeout(() => {
+      setErrorState(null);
+      setInfoState(null);
+    }, 5000);
+
+    return () => window.clearTimeout(timer);
+  }, [avisoVersion, errorMsg, infoMsg]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -87,7 +240,7 @@ export default function Home() {
       .getSession()
       .then(({ data, error }) => {
         if (!activo || eventoAuthRecibido) return;
-        if (error) setErrorMsg(`No se pudo recuperar la sesión: ${error.message}`);
+        if (error) setErrorMsg(`No se pudo recuperar la sesión: ${mensajeDeError(error)}`);
         const siguienteUsuario = data.session?.user ?? null;
         usuarioActualId.current = siguienteUsuario?.id ?? null;
         if (siguienteUsuario) setTurnosCargando(true);
@@ -123,7 +276,7 @@ export default function Home() {
       activo = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [setErrorMsg]);
 
   useEffect(() => {
     if (!supabase || !usuarioId) return;
@@ -140,7 +293,7 @@ export default function Home() {
         if (!activo) return;
         if (error) {
           setPerfil({ userId: usuarioId, role: null });
-          setErrorMsg(`No se pudo verificar tu rol: ${error.message}`);
+          setErrorMsg(`No se pudo verificar tu rol: ${mensajeDeError(error)}`);
         } else if (data.role === 'admin' || data.role === 'user') {
           setPerfil({ userId: usuarioId, role: data.role });
           setErrorMsg(null);
@@ -158,7 +311,7 @@ export default function Home() {
     return () => {
       activo = false;
     };
-  }, [usuarioId]);
+  }, [setErrorMsg, usuarioId]);
 
   const obtenerTurnos = useCallback(async () => {
     if (!supabase || !usuarioId || !rol) return [];
@@ -170,23 +323,44 @@ export default function Home() {
         .order('numero_turno', { ascending: esAdmin });
 
     if (!esAdmin) {
-      const { data, error } = await crearConsulta()
-        .eq('usuario_id', usuarioId)
-        .limit(10);
-      if (error) throw new Error(`Error al leer tus turnos: ${error.message}`);
-      return (data ?? []) as Turno[];
+      if (!mostrarHistorialCliente) {
+        const { data, error } = await crearConsulta()
+          .eq('usuario_id', usuarioId)
+          .eq('oculto_cliente', false)
+          .neq('estado', 'entregado')
+          .limit(10);
+        if (error) throw error;
+        return (data ?? []) as Turno[];
+      }
+
+      const turnosEntregados: Turno[] = [];
+      for (let desde = 0; ; desde += TURNOS_POR_PAGINA) {
+        const { data, error } = await crearConsulta()
+          .eq('usuario_id', usuarioId)
+          .eq('oculto_cliente', false)
+          .eq('estado', 'entregado')
+          .range(desde, desde + TURNOS_POR_PAGINA - 1);
+        if (error) throw error;
+        turnosEntregados.push(...((data ?? []) as Turno[]));
+        if (!data || data.length < TURNOS_POR_PAGINA) return turnosEntregados;
+      }
     }
 
     const todosLosTurnos: Turno[] = [];
     for (let desde = 0; ; desde += TURNOS_POR_PAGINA) {
-      const { data, error } = await crearConsulta()
-        .neq('estado', 'entregado')
-        .range(desde, desde + TURNOS_POR_PAGINA - 1);
-      if (error) throw new Error(`Error al leer la cola: ${error.message}`);
+      const consulta = crearConsulta();
+      const consultaFiltrada = mostrarHistorialEntregados
+        ? consulta.eq('estado', 'entregado').eq('oculto_admin', false)
+        : consulta.neq('estado', 'entregado');
+      const { data, error } = await consultaFiltrada.range(
+        desde,
+        desde + TURNOS_POR_PAGINA - 1,
+      );
+      if (error) throw error;
       todosLosTurnos.push(...((data ?? []) as Turno[]));
       if (!data || data.length < TURNOS_POR_PAGINA) return todosLosTurnos;
     }
-  }, [esAdmin, rol, usuarioId]);
+  }, [esAdmin, mostrarHistorialCliente, mostrarHistorialEntregados, rol, usuarioId]);
 
   const aplicarTurnos = useCallback(
     (lista: Turno[], notificarCambios: boolean) => {
@@ -216,7 +390,7 @@ export default function Home() {
       estadosInicializados.current = true;
       setTurnos(lista);
     },
-    [esAdmin],
+    [esAdmin, setInfoMsg],
   );
 
   const cargarTurnos = useCallback(async (notificarCambios = false) => {
@@ -224,11 +398,11 @@ export default function Home() {
     try {
       aplicarTurnos(await obtenerTurnos(), notificarCambios);
     } catch (error: unknown) {
-      setErrorMsg(mensajeDeError(error));
+      setErrorMsg(`No se pudieron cargar los turnos: ${mensajeDeError(error)}`);
     } finally {
       setTurnosCargando(false);
     }
-  }, [aplicarTurnos, obtenerTurnos]);
+  }, [aplicarTurnos, obtenerTurnos, setErrorMsg]);
 
   useEffect(() => {
     if (!supabase || !usuarioId || !rol) return;
@@ -239,7 +413,7 @@ export default function Home() {
         const lista = await obtenerTurnos();
         if (activo) aplicarTurnos(lista, false);
       } catch (error: unknown) {
-        if (activo) setErrorMsg(mensajeDeError(error));
+        if (activo) setErrorMsg(`No se pudieron cargar los turnos: ${mensajeDeError(error)}`);
       } finally {
         if (activo) setTurnosCargando(false);
       }
@@ -270,7 +444,7 @@ export default function Home() {
       setRealtimeConectado(false);
       void supabase.removeChannel(canal);
     };
-  }, [usuarioId, rol, obtenerTurnos, aplicarTurnos, cargarTurnos]);
+  }, [usuarioId, rol, obtenerTurnos, aplicarTurnos, cargarTurnos, setErrorMsg]);
 
   const enviarAutenticacion = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -291,7 +465,7 @@ export default function Home() {
           password: contrasena,
         });
         if (error) {
-          setErrorMsg(`No se pudo crear la cuenta: ${error.message}`);
+          setErrorMsg(`No se pudo crear la cuenta: ${mensajeDeError(error)}`);
         } else if (data.session) {
           setInfoMsg('Tu cuenta fue creada y ya puedes pedir tu café.');
           setContrasena('');
@@ -305,7 +479,7 @@ export default function Home() {
           password: contrasena,
         });
         if (error) {
-          setErrorMsg(`No se pudo iniciar sesión: ${error.message}`);
+          setErrorMsg(`No se pudo iniciar sesión: ${mensajeDeError(error)}`);
         } else {
           setInfoMsg('Iniciaste sesión correctamente.');
           setContrasena('');
@@ -324,7 +498,7 @@ export default function Home() {
     setErrorMsg(null);
     try {
       const { error } = await supabase.auth.signOut();
-      if (error) setErrorMsg(`No se pudo cerrar sesión: ${error.message}`);
+      if (error) setErrorMsg(`No se pudo cerrar sesión: ${mensajeDeError(error)}`);
       else setInfoMsg('Sesión cerrada.');
     } catch (error: unknown) {
       setErrorMsg(mensajeDeError(error));
@@ -349,7 +523,7 @@ export default function Home() {
         cliente_email: usuario.email,
       });
       if (error) {
-        setErrorMsg(`No se pudo pedir el turno: ${error.message}`);
+        setErrorMsg(`No se pudo pedir el turno: ${mensajeDeError(error)}`);
       } else {
         setNombreCafe('');
         setInfoMsg('Tu turno fue creado. Te avisaremos cuando tu café esté listo.');
@@ -374,7 +548,7 @@ export default function Home() {
         .update({ estado })
         .eq('id', turno.id);
       if (error) {
-        setErrorMsg(`No se pudo actualizar el turno: ${error.message}`);
+        setErrorMsg(`No se pudo actualizar el turno: ${mensajeDeError(error)}`);
       } else {
         setInfoMsg(
           estado === 'entregado'
@@ -387,6 +561,58 @@ export default function Home() {
       setErrorMsg(`No se pudo actualizar el turno: ${mensajeDeError(error)}`);
     } finally {
       setTurnoEnProceso(null);
+    }
+  };
+
+  const limpiarHistorialCliente = async () => {
+    if (!supabase || esAdmin) return;
+
+    setLimpiandoHistorial(true);
+    setErrorMsg(null);
+    setInfoMsg(null);
+    try {
+      const { data, error } = await supabase.rpc('limpiar_mis_turnos_entregados');
+      if (error) {
+        setErrorMsg(`No se pudo limpiar el historial: ${mensajeDeError(error)}`);
+      } else {
+        const cantidad = typeof data === 'number' ? data : 0;
+        setInfoMsg(
+          cantidad === 1
+            ? 'Se quitó 1 turno entregado de tu panel.'
+            : `Se quitaron ${cantidad} turnos entregados de tu panel.`,
+        );
+        await cargarTurnos();
+      }
+    } catch (error: unknown) {
+      setErrorMsg(`No se pudo limpiar el historial: ${mensajeDeError(error)}`);
+    } finally {
+      setLimpiandoHistorial(false);
+    }
+  };
+
+  const limpiarHistorialAdmin = async () => {
+    if (!supabase || !esAdmin || !mostrarHistorialEntregados) return;
+
+    setLimpiandoHistorialAdmin(true);
+    setErrorMsg(null);
+    setInfoMsg(null);
+    try {
+      const { data, error } = await supabase.rpc('limpiar_turnos_entregados_admin');
+      if (error) {
+        setErrorMsg(`No se pudo limpiar el historial: ${mensajeDeError(error)}`);
+      } else {
+        const cantidad = typeof data === 'number' ? data : 0;
+        setInfoMsg(
+          cantidad === 1
+            ? 'Se ocultó 1 pedido entregado del panel. Se conservó en el historial del cliente.'
+            : `Se ocultaron ${cantidad} pedidos entregados del panel. Se conservaron en el historial de los clientes.`,
+        );
+        await cargarTurnos();
+      }
+    } catch (error: unknown) {
+      setErrorMsg(`No se pudo limpiar el historial: ${mensajeDeError(error)}`);
+    } finally {
+      setLimpiandoHistorialAdmin(false);
     }
   };
 
@@ -428,13 +654,13 @@ export default function Home() {
               tc
             </span>
             <span>
-              <span className="block text-base font-bold tracking-tight">time coffee</span>
+              <span className="block text-base font-bold tracking-tight">Time Coffee</span>
               <span className="block text-xs text-stone-500">turnos simples, buen café</span>
             </span>
           </Link>
 
           {usuario && !cargandoAplicacion && (
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               <div className="hidden text-right sm:block">
                 <p className="max-w-48 truncate text-sm font-semibold">{usuario.email}</p>
                 <p className="text-xs capitalize text-stone-500">
@@ -586,11 +812,17 @@ export default function Home() {
                   </span>
                 </div>
                 <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                  {esAdmin ? 'Cola de pedidos' : 'Tu café, sin esperar de más.'}
+                  {esAdmin
+                    ? mostrarHistorialEntregados
+                      ? 'Historial de pedidos'
+                      : 'Cola de pedidos'
+                    : 'Tu café, sin esperar de más.'}
                 </h1>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500 sm:text-base">
                   {esAdmin
-                    ? 'Prepara los pedidos en orden y avisa cuando estén listos.'
+                    ? mostrarHistorialEntregados
+                      ? 'Consulta todos los pedidos que ya fueron entregados.'
+                      : 'Prepara los pedidos en orden y avisa cuando estén listos.'
                     : 'Pide tu café y sigue el estado de tu turno en tiempo real.'}
                 </p>
               </div>
@@ -608,7 +840,8 @@ export default function Home() {
 
             {esAdmin ? (
               <>
-                <section aria-label="Resumen de pedidos" className="mb-7 grid gap-4 sm:grid-cols-3">
+                {!mostrarHistorialEntregados && (
+                  <section aria-label="Resumen de pedidos" className="mb-7 grid gap-4 sm:grid-cols-3">
                   {(['pendiente', 'preparando', 'listo'] as const).map((estado) => (
                     <div key={estado} className="stat-card">
                       <span className={`stat-icon ${estado === 'preparando' ? 'stat-icon-green' : estado === 'listo' ? 'stat-icon-blue' : ''}`}>
@@ -622,24 +855,57 @@ export default function Home() {
                       </div>
                     </div>
                   ))}
-                </section>
+                  </section>
+                )}
 
                 <section className="surface-card overflow-hidden">
                   <div className="flex flex-col gap-3 border-b border-stone-100 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7">
                     <div>
-                      <p className="eyebrow">ORDEN ASCENDENTE</p>
+                      <p className="eyebrow">
+                        {mostrarHistorialEntregados ? 'HISTORIAL' : 'ORDEN ASCENDENTE'}
+                      </p>
                       <h2 className="mt-1 text-xl font-semibold tracking-tight">
-                        Pedidos por preparar
+                        {mostrarHistorialEntregados ? 'Pedidos entregados' : 'Pedidos por preparar'}
                       </h2>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                       <span className="text-xs text-stone-400">
-                        {turnos.length} {turnos.length === 1 ? 'turno activo' : 'turnos activos'}
+                        {turnos.length}{' '}
+                        {mostrarHistorialEntregados
+                          ? turnos.length === 1
+                            ? 'entregado'
+                            : 'entregados'
+                          : turnos.length === 1
+                            ? 'turno activo'
+                            : 'turnos activos'}
                       </span>
                       <button
                         type="button"
+                        aria-pressed={mostrarHistorialEntregados}
+                        onClick={() => {
+                          setMostrarHistorialEntregados((mostrar) => !mostrar);
+                          setTurnos([]);
+                          setTurnosCargando(true);
+                        }}
+                        disabled={limpiandoHistorialAdmin}
+                        className="button-secondary px-3 py-2"
+                      >
+                        {mostrarHistorialEntregados ? 'Volver a la cola' : 'Ver entregados'}
+                      </button>
+                      {mostrarHistorialEntregados && turnos.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => void limpiarHistorialAdmin()}
+                          disabled={limpiandoHistorialAdmin || turnosCargando}
+                          className="button-danger px-3 py-2 text-xs"
+                        >
+                          {limpiandoHistorialAdmin ? 'Limpiando...' : 'Limpiar entregados'}
+                        </button>
+                      )}
+                      <button
+                        type="button"
                         onClick={() => void cargarTurnos()}
-                        disabled={turnosCargando}
+                        disabled={turnosCargando || limpiandoHistorialAdmin}
                         className="button-secondary px-3 py-2"
                       >
                         {turnosCargando ? 'Actualizando...' : 'Actualizar'}
@@ -654,9 +920,15 @@ export default function Home() {
                       <span className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-amber-50 text-lg font-bold text-amber-800">
                         tc
                       </span>
-                      <h3 className="font-semibold">La cola está vacía</h3>
+                      <h3 className="font-semibold">
+                        {mostrarHistorialEntregados
+                          ? 'Todavía no hay pedidos entregados'
+                          : 'La cola está vacía'}
+                      </h3>
                       <p className="mt-1 text-sm text-stone-500">
-                        Los nuevos pedidos aparecerán aquí en tiempo real.
+                        {mostrarHistorialEntregados
+                          ? 'Los pedidos aparecerán aquí después de ser entregados.'
+                          : 'Los nuevos pedidos aparecerán aquí en tiempo real.'}
                       </p>
                     </div>
                   ) : (
@@ -757,19 +1029,56 @@ export default function Home() {
                 </section>
 
                 <section className="surface-card overflow-hidden">
-                  <div className="flex items-center justify-between gap-3 border-b border-stone-100 px-5 py-5 sm:px-7">
+                  <div className="flex flex-col gap-3 border-b border-stone-100 px-5 py-5 sm:px-7">
                     <div>
                       <p className="eyebrow">SEGUIMIENTO</p>
-                      <h2 className="mt-1 text-xl font-semibold tracking-tight">Tus turnos</h2>
+                      <h2 className="mt-1 text-xl font-semibold tracking-tight">
+                        {mostrarHistorialCliente ? 'Cafés entregados' : 'Tus turnos activos'}
+                      </h2>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => void cargarTurnos()}
-                      disabled={turnosCargando}
-                      className="button-secondary px-3 py-2"
-                    >
-                      Actualizar
-                    </button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="mr-auto text-xs text-stone-400">
+                        {turnos.length}{' '}
+                        {mostrarHistorialCliente
+                          ? turnos.length === 1
+                            ? 'entregado'
+                            : 'entregados'
+                          : turnos.length === 1
+                            ? 'turno activo'
+                            : 'turnos activos'}
+                      </span>
+                      <button
+                        type="button"
+                        aria-pressed={mostrarHistorialCliente}
+                        onClick={() => {
+                          setMostrarHistorialCliente((mostrar) => !mostrar);
+                          setTurnos([]);
+                          setTurnosCargando(true);
+                        }}
+                        disabled={limpiandoHistorial}
+                        className="button-secondary px-3 py-2"
+                      >
+                        {mostrarHistorialCliente ? 'Volver a mis turnos' : 'Ver entregados'}
+                      </button>
+                      {mostrarHistorialCliente && turnos.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => void limpiarHistorialCliente()}
+                          disabled={limpiandoHistorial}
+                          className="button-danger px-3 py-2 text-xs"
+                        >
+                          {limpiandoHistorial ? 'Limpiando...' : 'Limpiar entregados'}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => void cargarTurnos()}
+                        disabled={turnosCargando || limpiandoHistorial}
+                        className="button-secondary px-3 py-2"
+                      >
+                        {turnosCargando ? 'Actualizando...' : 'Actualizar'}
+                      </button>
+                    </div>
                   </div>
 
                   {turnosCargando && turnos.length === 0 ? (
@@ -779,9 +1088,15 @@ export default function Home() {
                       <span className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-amber-50 text-lg font-bold text-amber-800">
                         tc
                       </span>
-                      <h3 className="font-semibold">Todavía no tienes turnos</h3>
+                      <h3 className="font-semibold">
+                        {mostrarHistorialCliente
+                          ? 'Todavía no tienes cafés entregados'
+                          : 'No tienes turnos activos'}
+                      </h3>
                       <p className="mt-1 text-sm text-stone-500">
-                        Tu pedido y su estado aparecerán aquí.
+                        {mostrarHistorialCliente
+                          ? 'Los pedidos entregados que no limpies aparecerán aquí.'
+                          : 'Tus pedidos en preparación aparecerán aquí.'}
                       </p>
                     </div>
                   ) : (
