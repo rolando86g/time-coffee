@@ -20,6 +20,17 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Supabase authentication and coffee queue
+
+The web app uses Supabase Auth for email/password registration and login. Supabase stores authentication credentials in its managed `auth.users` table; passwords are not stored in the app's public tables. Customers create coffee turns, and admins advance each turn through preparation and delivery.
+
+1. In Supabase, open **SQL Editor** and run these migrations in order: `supabase/migrations/20261114000000_perfiles_usuario.sql`, `supabase/migrations/20261117000000_roles_y_mensajes.sql`, then `supabase/migrations/20261118000000_turnos_cafe.sql`. The second migration creates `public.profiles` with the `user`/`admin` role and configures the shared `mensajes` list. The third creates `public.turnos`, secures customer and admin access with RLS, and enables Realtime. Existing `public.perfiles` and `public.mensajes` data is preserved.
+2. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in `web/.env.local` for local development. Use the values from the Supabase project's API settings; `.env.example` shows the expected names.
+3. Add the same variables to the Vercel project's environment variables and redeploy.
+4. If email confirmation is enabled in Supabase Auth, configure the project's site URL and allowed redirect URLs for your local and Vercel domains. New users must confirm their email before signing in.
+5. To promote an account, update its role from the Supabase SQL Editor: `update public.profiles set role = 'admin' where id = 'AUTH-USER-UUID';`. Admins can update order states; customers can read only their own turns.
+6. Customers can opt into browser notifications from the app. In-app status updates use Realtime while the page is open; notifications after the browser is closed require a separate push-notification service.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
