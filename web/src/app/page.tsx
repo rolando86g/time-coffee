@@ -993,27 +993,27 @@ export default function Home() {
                   <p className="eyebrow">NUEVO PEDIDO</p>
                   <h2 className="mt-1 text-xl font-semibold tracking-tight">¿Qué café te preparamos?</h2>
                   <p className="mt-2 text-sm leading-6 text-stone-500">
-                    Elige uno de la lista o escribe tu café favorito.
+                    Elige un café del menú.
                   </p>
                   <form onSubmit={pedirTurno} className="mt-6 space-y-4">
                     <label htmlFor="nombre-cafe" className="field-label">
                       Nombre del café
-                      <input
+                      <select
                         id="nombre-cafe"
-                        list="cafes-sugeridos"
-                        type="text"
                         required
-                        maxLength={80}
                         value={nombreCafe}
                         onChange={(event) => setNombreCafe(event.target.value)}
                         className="field-input"
-                        placeholder="Ej. Latte de avena"
-                      />
-                      <datalist id="cafes-sugeridos">
+                      >
+                        <option value="" disabled>
+                          Selecciona un café
+                        </option>
                         {CAFES_SUGERIDOS.map((cafe) => (
-                          <option key={cafe} value={cafe} />
+                          <option key={cafe} value={cafe}>
+                            {cafe}
+                          </option>
                         ))}
-                      </datalist>
+                      </select>
                     </label>
                     <button
                       type="submit"
