@@ -31,6 +31,25 @@ The web app uses Supabase Auth for email/password registration and login. Supaba
 5. To promote an account, update its role from the Supabase SQL Editor: `update public.profiles set role = 'admin' where id = 'AUTH-USER-UUID';`. Admins can update order states; customers can read only their own turns.
 6. Customers can opt into browser notifications from the app. In-app status updates use Realtime while the page is open; notifications after the browser is closed require a separate push-notification service.
 
+## Temporary two-tablet name queue
+
+The no-login kiosk is available at `/turnos` and the barista display at `/barista`. The customer gets 10 seconds to read the assigned number before the kiosk returns to the name-entry screen. The barista can mark a turn as attended to advance the queue; its number is not reused during the day.
+
+Orders can be accepted at any time. The queue resets automatically when the date changes in `America/Argentina/Buenos_Aires`; the barista can also clear it manually and reset numbering to #1.
+
+The server-side environment flag `CAFE_TURNOS_HABILITADOS` controls order intake. Set it to `false` in `web/.env.local` to pause new turns, or `true` to allow them at any time. If omitted, it defaults to `true`. Restart the dev server after changing the value. The existing queue remains visible to the barista while intake is paused.
+
+The queue is held only in the Node.js server process memory: it is shared by clients reaching that same process, but it is cleared when the process restarts and is not suitable for serverless or multi-instance hosting. There is no login on these kiosk pages, so use them only on a trusted local network and do not expose them directly to the public internet.
+
+For two tablets on the same Wi-Fi, start the app so other devices can reach it:
+
+```powershell
+npm run dev -- --hostname 0.0.0.0
+```
+
+Find this computer's local IPv4 address with `ipconfig`, then open `http://<computer-ip>:3000/turnos` on the customer tablet and `http://<computer-ip>:3000/barista` on the barista tablet. Keep the server running and allow local-network access through the computer's firewall.
+In development, `web/next.config.ts` allows the current LAN address (`192.168.68.110`) for Next.js dev resources. If `ipconfig` shows a different address, update `allowedDevOrigins` to that IP and restart the development server.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
